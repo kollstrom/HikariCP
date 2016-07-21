@@ -423,7 +423,7 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
    // ***********************************************************************
 
    /**
-    * Getting new connection from data source.
+    * Creating new poolEntry.
     */
    private PoolEntry createPoolEntry()
    {
@@ -565,7 +565,7 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
    // ***********************************************************************
 
    /**
-    * Creating and adding connections to the pool.
+    * Creating and adding poolEntries (connections) to the pool.
     */
    private class PoolEntryCreator implements Callable<Boolean>
    {
