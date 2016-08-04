@@ -507,7 +507,7 @@ abstract class PoolBase
             statement.execute(sql);
          }
 
-         if (isIsolateInternalQueries && !isReadOnly && !isAutoCommit) {
+         if (isIsolateInternalQueries && !isAutoCommit) {
             if (isCommit) {
                connection.commit();
             }
