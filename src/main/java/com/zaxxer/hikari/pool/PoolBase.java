@@ -175,7 +175,7 @@ abstract class PoolBase
 
    Throwable getLastConnectionFailure()
    {
-      return lastConnectionFailure.getAndSet(null);
+      return lastConnectionFailure.get();
    }
 
    public DataSource getUnwrappedDataSource()
