@@ -28,7 +28,6 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,7 +78,6 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
    private final long HOUSEKEEPING_PERIOD_MS = Long.getLong("com.zaxxer.hikari.housekeeping.periodMs", SECONDS.toMillis(30));
 
    private final PoolEntryCreator POOL_ENTRY_CREATOR = new PoolEntryCreator();
-   private final AtomicInteger totalConnections;
    private final ThreadPoolExecutor addConnectionExecutor;
    private final ThreadPoolExecutor closeConnectionExecutor;
    private final ScheduledThreadPoolExecutor houseKeepingExecutorService;
@@ -101,7 +99,6 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
       super(config);
 
       this.connectionBag = new ConcurrentBag<>(this);
-      this.totalConnections = new AtomicInteger();
       this.suspendResumeLock = config.isAllowPoolSuspension() ? new SuspendResumeLock() : SuspendResumeLock.FAUX_LOCK;
 
       if (config.getMetricsTrackerFactory() != null) {
@@ -404,7 +401,7 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
    final void closeConnection(final PoolEntry poolEntry, final String closureReason)
    {
       if (connectionBag.remove(poolEntry)) {
-         final int tc = totalConnections.decrementAndGet();
+         final int tc = getTotalConnections();
          if (tc < 0) {
             LOGGER.warn("{} - Unexpected value of totalConnections={}", poolName, tc, new Exception());
          }
@@ -413,6 +410,9 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
             @Override
             public void run() {
                quietlyCloseConnection(connection, closureReason);
+               if (poolState == POOL_NORMAL) {
+                  fillPool();
+               }
             }
          });
       }
@@ -457,9 +457,9 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
    /**
     * Fill pool up from current idle connections (as they are perceived at the point of execution) to minimumIdle connections.
     */
-   private void fillPool()
+   private synchronized void fillPool()
    {
-      final int connectionsToAdd = Math.min(config.getMaximumPoolSize() - totalConnections.get(), config.getMinimumIdle() - getIdleConnections())
+      final int connectionsToAdd = Math.min(config.getMaximumPoolSize() - getTotalConnections(), config.getMinimumIdle() - getIdleConnections())
                                    - addConnectionExecutor.getQueue().size();
       for (int i = 0; i < connectionsToAdd; i++) {
          addBagItem();
@@ -489,9 +489,7 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
             quietlyCloseConnection(connection, "(connection aborted during shutdown)");
          }
          finally {
-            if (connectionBag.remove(poolEntry)) {
-               totalConnections.decrementAndGet();
-            }
+            connectionBag.remove(poolEntry);
          }
       }
    }
@@ -575,10 +573,9 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
       public Boolean call() throws Exception
       {
          long sleepBackoff = 250L;
-         while (poolState == POOL_NORMAL && totalConnections.get() < config.getMaximumPoolSize()) {
+         while (poolState == POOL_NORMAL && getTotalConnections() < config.getMaximumPoolSize()) {
             final PoolEntry poolEntry = createPoolEntry();
             if (poolEntry != null) {
-               totalConnections.incrementAndGet();
                connectionBag.add(poolEntry);
                return Boolean.TRUE;
             }
