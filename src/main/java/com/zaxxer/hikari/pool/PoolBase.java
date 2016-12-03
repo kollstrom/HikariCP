@@ -60,6 +60,7 @@ abstract class PoolBase
    protected final String poolName;
    protected long connectionTimeout;
    protected long validationTimeout;
+   protected MetricsTrackerDelegate metricsTracker;
 
    private static final String[] RESET_STATES = {"readOnly", "autoCommit", "isolation", "catalog", "netTimeout"};
    private static final int UNINITIALIZED = -1;
@@ -145,14 +146,14 @@ abstract class PoolBase
             if (isUseJdbc4Validation) {
                return connection.isValid((int) MILLISECONDS.toSeconds(Math.max(1000L, validationTimeout)));
             }
-   
+
             setNetworkTimeout(connection, validationTimeout);
-   
+
             try (Statement statement = connection.createStatement()) {
                if (isNetworkTimeoutSupported != TRUE) {
                   setQueryTimeout(statement, (int) MILLISECONDS.toSeconds(Math.max(1000L, validationTimeout)));
                }
-   
+
                statement.execute(config.getConnectionTestQuery());
             }
          }
@@ -335,6 +336,8 @@ abstract class PoolBase
     */
    Connection newConnection() throws Exception
    {
+      final long start = ClockSource.INSTANCE.currentTime();
+
       Connection connection = null;
       try {
          String username = config.getUsername();
@@ -365,6 +368,12 @@ abstract class PoolBase
          lastConnectionFailure.set(cause);
          throw e;
       }
+      finally {
+         // tracker will be null during failFast check
+         if (metricsTracker != null) {
+            metricsTracker.recordConnectionCreated(ClockSource.INSTANCE.elapsedMillis(start));
+         }
+      }
    }
 
    /**
@@ -382,22 +391,22 @@ abstract class PoolBase
          else {
             setNetworkTimeout(connection, validationTimeout);
          }
-   
+
          connection.setReadOnly(isReadOnly);
          connection.setAutoCommit(isAutoCommit);
-   
+
          checkDriverSupport(connection);
-   
+
          if (transactionIsolation != defaultTransactionIsolation) {
             connection.setTransactionIsolation(transactionIsolation);
          }
-   
+
          if (catalog != null) {
             connection.setCatalog(catalog);
          }
-   
+
          executeSql(connection, config.getConnectionInitSql(), true);
-   
+
          setNetworkTimeout(connection, networkTimeout);
       }
       catch (SQLException e) {
@@ -661,6 +670,11 @@ abstract class PoolBase
          tracker.recordConnectionUsageMillis(poolEntry.getMillisSinceBorrowed());
       }
 
+      void recordConnectionCreated(long connectionCreatedMillis)
+      {
+         tracker.recordConnectionCreatedMillis(connectionCreatedMillis);
+      }
+
       /**
        * @param poolEntry
        * @param startTime
@@ -703,6 +717,12 @@ abstract class PoolBase
 
       @Override
       void recordConnectionTimeout()
+      {
+         // no-op
+      }
+
+      @Override
+      void recordConnectionCreated(long connectionCreatedMillis)
       {
          // no-op
       }
