@@ -22,7 +22,6 @@ import java.sql.SQLTransientConnectionException;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -301,12 +300,7 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
    @Override
    public Future<Boolean> addBagItem()
    {
-      final int connectionsToAdd = connectionBag.getPendingQueue() - addConnectionExecutor.getQueue().size();
-      if (connectionsToAdd > 0) {
-         return addConnectionExecutor.submit(POOL_ENTRY_CREATOR);
-      }
-
-      return CompletableFuture.completedFuture(Boolean.TRUE);
+      return addConnectionExecutor.submit(POOL_ENTRY_CREATOR);
    }
 
    // ***********************************************************************
@@ -585,7 +579,7 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
       public Boolean call() throws Exception
       {
          long sleepBackoff = 250L;
-         while (poolState == POOL_NORMAL && getTotalConnections() < config.getMaximumPoolSize()) {
+         while (poolState == POOL_NORMAL && shouldCreateAnotherConnection()) {
             final PoolEntry poolEntry = createPoolEntry();
             if (poolEntry != null) {
                connectionBag.add(poolEntry);
@@ -599,6 +593,13 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
          }
          // Pool is suspended or shutdown or at max size
          return Boolean.FALSE;
+      }
+
+      private boolean shouldCreateAnotherConnection() {
+         // only create connections if we need another idle connection or have threads still waiting
+         // for a new connection, otherwise bail
+         return getTotalConnections() < config.getMaximumPoolSize() &&
+            (connectionBag.getPendingQueue() > 0 || getIdleConnections() < config.getMinimumIdle());
       }
    }
 
