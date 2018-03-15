@@ -547,6 +547,8 @@ public class HikariPool extends PoolBase implements HikariPoolMXBean, IBagStateL
             this.idleConnections = HikariPool.this.getIdleConnections();
             this.totalConnections = HikariPool.this.getTotalConnections();
             this.activeConnections = HikariPool.this.getActiveConnections();
+            this.maxConnections = config.getMaximumPoolSize();
+            this.minConnections = config.getMinimumIdle();
          }
       };
    }
