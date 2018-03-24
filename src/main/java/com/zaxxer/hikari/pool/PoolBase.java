@@ -398,8 +398,13 @@ abstract class PoolBase
             setNetworkTimeout(connection, validationTimeout);
          }
 
-         connection.setReadOnly(isReadOnly);
-         connection.setAutoCommit(isAutoCommit);
+         if (connection.isReadOnly() != isReadOnly) {
+            connection.setReadOnly(isReadOnly);
+         }
+
+         if (connection.getAutoCommit() != isAutoCommit) {
+            connection.setAutoCommit(isAutoCommit);
+         }
 
          checkDriverSupport(connection);
 
